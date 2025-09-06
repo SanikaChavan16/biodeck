@@ -1,8 +1,11 @@
 // client/src/components/Signup.jsx
 import React, { useState } from "react";
 import axios from "axios";
+import useAuthCheck from "../hooks/useAuthCheck";   // <-- add this
 
 export default function Signup() {
+  useAuthCheck();   // <-- call it at the top of your component body
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");

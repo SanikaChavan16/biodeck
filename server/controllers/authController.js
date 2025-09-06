@@ -28,9 +28,7 @@ export const signup = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    const newCompany = new Company({
-      name: company.name,
-    });
+    const newCompany = new Company({ name: company.name });
     await newCompany.save();
 
     const verifyToken = crypto.randomBytes(32).toString("hex");
@@ -73,15 +71,31 @@ export const verifyEmail = async (req, res) => {
     const { token, email } = req.query;
     const decodedEmail = decodeURIComponent(email);
 
-    const user = await User.findOne({ email: decodedEmail, verifyToken: token });
+    const user = await User.findOne({ email: decodedEmail, verifyToken: token }).populate("company");
     if (!user) return res.status(400).send("Invalid or expired link");
 
     user.isVerified = true;
     user.verifyToken = null;
     await user.save();
 
-    const tokenJwt = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "7d" });
-    return res.redirect(`${FRONTEND_URL}/dashboard?token=${tokenJwt}`);
+    const payload = {
+      id: user._id,
+      email: user.email,
+      companyId: user.company?._id || user.company,
+      role: user.role || "user",
+    };
+    const tokenJwt = jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+
+    // ✅ Set httpOnly cookie
+    res.cookie("token", tokenJwt, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // Redirect to dashboard
+    return res.redirect(`${FRONTEND_URL}/dashboard?verified=1`);
   } catch (err) {
     console.error("verifyEmail error:", err);
     res.status(500).send("Server error");
@@ -101,8 +115,26 @@ export const login = async (req, res) => {
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
     if (!user.isVerified) return res.status(401).json({ message: "Verify your email first" });
 
-    const tokenJwt = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token: tokenJwt, user: { email: user.email, company: user.company } });
+    const payload = {
+      id: user._id,
+      email: user.email,
+      companyId: user.company?._id || user.company,
+      role: user.role || "user",
+    };
+    const tokenJwt = jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+
+    // ✅ Set httpOnly cookie
+    res.cookie("token", tokenJwt, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.json({
+      message: "Login successful",
+      user: { email: user.email, company: user.company },
+    });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
